@@ -4,4 +4,6 @@ venv
 
 *.pyc
 *.jpg
+*.txt
 !sample.jpg
+!requirements.txt

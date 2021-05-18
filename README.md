@@ -35,6 +35,8 @@ python captcha_to_string.py -d ./data -o ./my_res.txt
 
 - Apply dilatation on image to make text bolder
 
+> The code and visualization could be found in `captcha_breaker.ipynb`
+
 ## Tesseract
 
 - Use `--psm 7` (Treat the image as a single text line.)
