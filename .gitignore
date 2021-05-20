@@ -5,5 +5,7 @@ venv
 *.pyc
 *.jpg
 *.txt
+*.csv
+!company_list.csv
 !sample.jpg
 !requirements.txt
