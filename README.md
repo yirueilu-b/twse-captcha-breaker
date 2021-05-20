@@ -2,6 +2,8 @@
 
 Recognize string from the captcha on TWSE daily report using Tesseract OCR.
 
+Example for crawling data from TWSE using Selenium
+
 ##  Usage
 
 [Follow the steps to install Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation.html)
@@ -23,6 +25,8 @@ python captcha_to_string.py -d ./data
 python captcha_to_string.py -d ./data -o ./my_res.txt
 ```
 
+Run `crawler.py` to crawl the data from TWSE
+
 ## Preprocess
 
 - Using "Opening" to filter small noises on image
@@ -42,6 +46,16 @@ python captcha_to_string.py -d ./data -o ./my_res.txt
 - Use `--psm 7` (Treat the image as a single text line.)
 
 - Use `--oem 2`, `--oem 1` then `--oem 0` sequentially if length of output string is not equals to 5
+
+## Crawler
+
+- Request the target URL
+
+- Get captcha image by extract the `src` of image then use `captcha_to_string.py` to recognize the text on the image
+
+- Fill the form and submit with Selenium
+
+- Clean and save the data
 
 ## Result
 
