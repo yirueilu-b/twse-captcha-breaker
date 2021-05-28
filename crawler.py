@@ -1,13 +1,14 @@
 import os
 import time
 import base64
+from glob import glob
 
 import pandas as pd
 import numpy as np
 from bs4 import BeautifulSoup
 import cv2
 from selenium import webdriver
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from captcha_to_string import preprocess, image_to_string
 
@@ -17,6 +18,7 @@ DATA_DIR = os.path.join(BASE_DIR, LOCAL_DEALER_DIR)
 
 COMPANY_LIST_FILENAME = 'company_list.csv'
 STOCK_ID_LIST = pd.read_csv(os.path.join(BASE_DIR, COMPANY_LIST_FILENAME)).stock_id.tolist()
+# STOCK_ID_LIST = [3481]
 CHROME_DRIVER = os.path.join(BASE_DIR, 'chromedriver.exe')
 
 POST_URL = 'https://bsr.twse.com.tw/bshtm/bsMenu.aspx'
@@ -58,6 +60,8 @@ def extract_data(soup):
     for i in range(len(right_tables)):
         tables.append(pd.read_html(str(right_tables[i]))[0])
     # print("{} stock id {} tables extracted".format(current_time(), stock_id))
+    if not tables:
+        return pd.DataFrame()
     data = pd.concat(tables).iloc[:-1]
     # print("{} stock id {} tables concat".format(current_time(), stock_id))
     data.columns = ['order', 'bank', 'price', 'buy_shares', 'sell_shares']
@@ -74,11 +78,12 @@ def get_data(browser, stock_id):
     # time.sleep(1)
     browser.find_element_by_id("TextBox_Stkno").send_keys(stock_id)
     check_text = '驗證碼錯誤!'
+
     while check_text and check_text != '查無資料':
         text = None
         while not text:
             try:
-                text = get_captcha_text(chrome)
+                text = get_captcha_text(browser)
             except Exception as e:
                 print('{} Cannot get captcha image, {}'.format(current_time(), e))
                 browser.refresh()
@@ -102,28 +107,25 @@ def get_data(browser, stock_id):
     # print("{} stock id {} bs4 parsing html done".format(current_time(), stock_id))
     data = extract_data(soup)
     # print("{} stock id {} tables cleaned".format(current_time(), stock_id))
+    table_date = browser.find_element_by_id("receive_date").text.split('/')
+    table_date = '-'.join(table_date)
+    table_stock_id = browser.find_element_by_id("stock_id").text[:4]
+    data['date'] = table_date
+    data['stock_id'] = table_stock_id
     return data
 
 
-if __name__ == '__main__':
-    current_date = datetime.strftime(datetime.now(), '%Y-%m-%d')
-    dir_path = os.path.join(DATA_DIR, current_date)
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
-        print("{} Directory".format(current_time()), dir_path, " Created")
-    else:
-        print("{} Directory".format(current_time()), dir_path, " already exists...")
-
+def run_crawler(save_dir, stock_id_list):
     options = webdriver.ChromeOptions()
     options.add_argument('headless')
     options.add_argument("disable-gpu")
     options.add_experimental_option('excludeSwitches', ['enable-automation'])
     chrome = webdriver.Chrome(executable_path=CHROME_DRIVER, options=options)
 
-    for i in range(len(STOCK_ID_LIST)):
-        code = STOCK_ID_LIST[i]
-        print("{} Download stock id {} data ({}/{})".format(current_time(), code, i + 1, len(STOCK_ID_LIST)))
-        save_path = os.path.join(dir_path, '{}.csv'.format(code))
+    for i in range(len(stock_id_list)):
+        code = stock_id_list[i]
+        print("{} Download stock id {} data ({}/{})".format(current_time(), code, i + 1, len(stock_id_list)))
+        save_path = os.path.join(save_dir, '{}.csv'.format(code))
         if os.path.exists(save_path):
             continue
         df = get_data(chrome, code)
@@ -134,5 +136,52 @@ if __name__ == '__main__':
             print('{} No data found, invalid stock id.'.format(current_time()))
         time.sleep(1)
 
-    chrome.quit()
     chrome.close()
+    chrome.quit()
+
+
+def check_data(save_dir, stock_id_list):
+    num_files = len(glob(os.path.join(save_dir, '*')))
+    if num_files != len(stock_id_list):
+        print("{} Found {}/{} files in {}".format(current_time(), num_files, len(stock_id_list), save_dir))
+        return False, stock_id_list
+    wrong_data = []
+    for i in range(len(stock_id_list)):
+        code = stock_id_list[i]
+        save_path = os.path.join(save_dir, '{}.csv'.format(code))
+        df = pd.read_csv(save_path)
+        if df.date[0] != current_date:
+            print("{} Date {} mismatch {}".format(current_time(), df.date[0], current_date))
+            wrong_data.append(code)
+            continue
+        if df.stock_id[0] != code:
+            print("{} Stock ID {} mismatch {}".format(current_time(), df.stock_id[0], code))
+            wrong_data.append(code)
+            continue
+    return len(wrong_data) == 0, wrong_data
+
+
+if __name__ == '__main__':
+    # Remote data updated after 4 pm. everyday
+    if datetime.now().hour >= 16:
+        current_date = datetime.strftime(datetime.now(), '%Y-%m-%d')
+    else:
+        current_date = datetime.strftime(datetime.now() - timedelta(days=1), '%Y-%m-%d')
+
+    # Create save dir if it not exists
+    save_directory = os.path.join(DATA_DIR, current_date)
+    if not os.path.exists(save_directory):
+        os.makedirs(save_directory)
+        print("{} Directory".format(current_time()), save_directory, " created")
+    else:
+        print("{} Directory".format(current_time()), save_directory, " already exists")
+
+    # Initial checking
+    is_complete, STOCK_ID_LIST = check_data(save_directory, STOCK_ID_LIST)
+    while not is_complete:
+        try:
+            run_crawler(save_directory, STOCK_ID_LIST)
+        except Exception as e:
+            print(e)
+            continue
+        is_complete, STOCK_ID_LIST = check_data(save_directory, STOCK_ID_LIST)
